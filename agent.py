@@ -30,9 +30,16 @@ For any query involving cached connections:
 3. Combine and deduplicate results from both, rank by: degree first, then similarity.
 
 For school queries (Berkeley, IIT, Haas etc.):
-- semantic_search_connections will find people who mention the school in their headline
-- search_linkedin_live will find more via LinkedIn's own school indexing
-- Always clarify: "found people who mention X in their headline — not all alumni may be captured"
+- Use search_linkedin_live with school="Berkeley" — uses LinkedIn's school index, far more accurate than keywords
+- Also run semantic_search_connections for people who mention the school in their headline
+- Always clarify: "found via LinkedIn school filter — not all alumni may be in your network"
+
+For title queries (founder, VP, CTO etc.):
+- Use search_linkedin_live with title="founder" instead of putting it in keywords
+
+For company queries (Google, Sequoia etc.):
+- Use search_linkedin_live with company="Google" for current employees
+- For ex-employees, use keywords="ex-Google" or "formerly Google"
 
 DATA NOTE: cache has name, headline, location only. Company/school only if in headline.
 

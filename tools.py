@@ -57,6 +57,7 @@ TOOL_DEFINITIONS = [
         "description": (
             "Live LinkedIn people search. Slower; hits the LinkedIn API. "
             "Use when local cache has < 5 relevant results or user asks for 2nd-degree connections. "
+            "Use school/title/company filters when the user specifies them — much more accurate than keywords alone. "
             "Keep limit ≤ 15 to stay within rate limits."
         ),
         "input_schema": {
@@ -64,7 +65,19 @@ TOOL_DEFINITIONS = [
             "properties": {
                 "keywords": {
                     "type": "string",
-                    "description": "Search string, e.g. 'SaaS founder India Series A'",
+                    "description": "General search string, e.g. 'SaaS founder India'. Optional if filters are provided.",
+                },
+                "school": {
+                    "type": "string",
+                    "description": "Filter by school name, e.g. 'Berkeley', 'IIT Bombay', 'Haas'. Uses LinkedIn's school index — more accurate than putting school in keywords.",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Filter by job title, e.g. 'founder', 'VP Product', 'CTO'.",
+                },
+                "company": {
+                    "type": "string",
+                    "description": "Filter by current company name, e.g. 'Google', 'Sequoia'.",
                 },
                 "include_second_degree": {
                     "type": "boolean",
@@ -77,7 +90,6 @@ TOOL_DEFINITIONS = [
                     "default": 10,
                 },
             },
-            "required": ["keywords"],
         },
     },
     {
@@ -183,9 +195,12 @@ def execute_tool(name: str, inputs: dict) -> Any:
     if name == "search_linkedin_live":
         degrees = ["F", "S"] if inputs.get("include_second_degree", True) else ["F"]
         results = linkedin_client.search_people(
-            keywords=inputs["keywords"],
+            keywords=inputs.get("keywords"),
             degrees=degrees,
             limit=min(inputs.get("limit", 10), 15),
+            school=inputs.get("school"),
+            title=inputs.get("title"),
+            company=inputs.get("company"),
         )
         # Cache any new results we discover
         for r in results:

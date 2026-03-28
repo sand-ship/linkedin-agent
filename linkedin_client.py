@@ -166,24 +166,39 @@ def sync_connections(progress_cb=None) -> int:
     return count
 
 
-def search_people(keywords: str, degrees: list = None, limit: int = 10):
+def search_people(
+    keywords: str = None,
+    degrees: list = None,
+    limit: int = 10,
+    school: str = None,
+    title: str = None,
+    company: str = None,
+):
     """Live LinkedIn people search. degrees = ['F'] and/or ['S']."""
     api = get_client()
     network_depths = degrees or ["F", "S"]
 
-    try:
-        # Try with network filter first
-        results = api.search_people(
-            keywords=keywords,
-            network_depths=network_depths,
-            limit=limit,
-        )
-        logger.info(f"Live search '{keywords}' (depths={network_depths}) returned {len(results)} results")
+    kwargs = dict(
+        network_depths=network_depths,
+        limit=limit,
+    )
+    if keywords:
+        kwargs["keywords"] = keywords
+    if school:
+        kwargs["keyword_school"] = school
+    if title:
+        kwargs["keyword_title"] = title
+    if company:
+        kwargs["keyword_company"] = company
 
-        # If empty, retry without network filter — LinkedIn sometimes ignores it anyway
+    try:
+        results = api.search_people(**kwargs)
+        logger.info(f"Live search {kwargs} returned {len(results)} results")
+
         if not results:
             logger.info("Retrying without network_depths filter...")
-            results = api.search_people(keywords=keywords, limit=limit)
+            kwargs.pop("network_depths", None)
+            results = api.search_people(**kwargs)
             logger.info(f"Retry returned {len(results)} results")
 
         if results:
