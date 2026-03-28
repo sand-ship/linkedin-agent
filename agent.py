@@ -64,17 +64,20 @@ async def run_agent(
         )
 
         if response.stop_reason == "tool_use":
-            tool_results = []
-            for block in response.content:
-                if block.type == "tool_use":
-                    if progress_cb:
-                        await progress_cb(f"🔍 {_friendly_tool_name(block.name)}...")
-                    result = await asyncio.to_thread(execute_tool, block.name, block.input)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": json.dumps(result),
-                    })
+            tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
+
+            async def _run_tool(block):
+                if progress_cb:
+                    await progress_cb(f"🔍 {_friendly_tool_name(block.name)}...")
+                result = await asyncio.to_thread(execute_tool, block.name, block.input)
+                return {
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": json.dumps(result),
+                }
+
+            tool_results = list(await asyncio.gather(*[_run_tool(b) for b in tool_use_blocks]))
+            tool_results = [_filter_results(tr) for tr in tool_results]
 
             messages.append({"role": "assistant", "content": response.content})
             messages.append({"role": "user", "content": tool_results})
@@ -93,6 +96,59 @@ async def run_agent(
     return "Reached maximum tool call rounds. Please try a more specific query."
 
 
+_ROLE_KEYWORDS      = {"founder", "ceo", "cto", "co-founder"}
+_LOCATION_KEYWORDS  = {"india", "bangalore", "mumbai"}
+_SENIORITY_KEYWORDS = {"series a", "yc", "ex-google"}
+_SIMILARITY_THRESHOLD = 0.3
+
+
+def _score_profile(profile: dict) -> float:
+    score = 0.0
+    headline = (profile.get("headline") or "").lower()
+    location  = (profile.get("location") or "").lower()
+    degree    = (profile.get("degree") or "").upper()
+
+    if degree == "F":
+        score += 3.0
+    elif degree == "S":
+        score += 1.0
+
+    if any(kw in headline for kw in _ROLE_KEYWORDS):
+        score += 2.0
+
+    if any(kw in location for kw in _LOCATION_KEYWORDS):
+        score += 1.0
+
+    if any(kw in headline for kw in _SENIORITY_KEYWORDS):
+        score += 1.0
+
+    score += profile.get("similarity", 0.0)
+    return score
+
+
+def _filter_results(tool_result: dict) -> dict:
+    """Score and filter profiles inside a tool_result dict in-place."""
+    try:
+        payload = json.loads(tool_result["content"])
+    except (KeyError, json.JSONDecodeError):
+        return tool_result
+
+    profiles = payload.get("results")
+    if not isinstance(profiles, list):
+        return tool_result
+
+    filtered = [
+        p for p in profiles
+        if p.get("similarity", 1.0) >= _SIMILARITY_THRESHOLD
+    ]
+    scored = sorted(filtered, key=_score_profile, reverse=True)
+
+    payload["results"] = scored
+    payload["count"] = len(scored)
+    tool_result["content"] = json.dumps(payload)
+    return tool_result
+
+
 def clear_history(chat_id: int):
     _conversations.pop(chat_id, None)
 
@@ -101,6 +157,7 @@ def _friendly_tool_name(name: str) -> str:
     return {
         "search_local_connections": "Searching local cache",
         "search_linkedin_live": "Searching LinkedIn live",
+        "batch_search_linkedin": "Batch searching LinkedIn",
         "get_cache_status": "Checking cache",
         "enrich_company_funding": "Looking up funding data",
     }.get(name, name)

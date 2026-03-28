@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -114,6 +115,36 @@ TOOL_DEFINITIONS = [
         "input_schema": {"type": "object", "properties": {}},
     },
     {
+        "name": "batch_search_linkedin",
+        "description": (
+            "Run multiple LinkedIn live searches concurrently and return a single deduplicated list. "
+            "Use when the user asks for results across multiple locations, roles, or keywords at once. "
+            "Faster than calling search_linkedin_live separately for each query. "
+            "If one query fails (e.g. rate-limited), the others still complete."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "queries": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of search strings to run in parallel, e.g. ['VC London', 'VC San Francisco']",
+                },
+                "include_second_degree": {
+                    "type": "boolean",
+                    "description": "Include 2nd-degree connections (default true)",
+                    "default": True,
+                },
+                "limit_per_query": {
+                    "type": "integer",
+                    "description": "Max results per query, keep ≤ 15 (default 10)",
+                    "default": 10,
+                },
+            },
+            "required": ["queries"],
+        },
+    },
+    {
         "name": "enrich_company_funding",
         "description": (
             "Look up a company's latest funding round via Crunchbase. "
@@ -176,10 +207,64 @@ def execute_tool(name: str, inputs: dict) -> Any:
             "semantic_index_count": embeddings.index_count(),
         }
 
+    if name == "batch_search_linkedin":
+        return _batch_search_linkedin(
+            queries=inputs["queries"],
+            include_second_degree=inputs.get("include_second_degree", True),
+            limit_per_query=min(inputs.get("limit_per_query", 10), 15),
+        )
+
     if name == "enrich_company_funding":
         return _crunchbase_lookup(inputs["company_name"])
 
     return {"error": f"Unknown tool: {name}"}
+
+
+def _batch_search_linkedin(
+    queries: list,
+    include_second_degree: bool = True,
+    limit_per_query: int = 10,
+) -> dict:
+    degrees = ["F", "S"] if include_second_degree else ["F"]
+
+    async def _single(query: str) -> list:
+        return await asyncio.to_thread(
+            linkedin_client.search_people,
+            keywords=query,
+            degrees=degrees,
+            limit=limit_per_query,
+        )
+
+    async def _run_all() -> list:
+        return await asyncio.gather(
+            *[_single(q) for q in queries],
+            return_exceptions=True,
+        )
+
+    outcomes = asyncio.run(_run_all())
+
+    seen_ids: set = set()
+    unified: list = []
+    errors: list = []
+
+    for query, outcome in zip(queries, outcomes):
+        if isinstance(outcome, Exception):
+            logger.warning("batch_search query %r failed: %s", query, outcome)
+            errors.append({"query": query, "error": str(outcome)})
+            continue
+        for profile in outcome:
+            pid = profile.get("profile_id")
+            if pid in seen_ids:
+                continue
+            if pid:
+                seen_ids.add(pid)
+                db.upsert_connection(profile)
+            unified.append(profile)
+
+    result: dict = {"count": len(unified), "results": unified}
+    if errors:
+        result["errors"] = errors
+    return result
 
 
 def _crunchbase_lookup(company_name: str) -> dict:
