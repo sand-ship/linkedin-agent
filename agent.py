@@ -114,11 +114,11 @@ def _score_profile(profile: dict) -> float:
     score = 0.0
     headline = (profile.get("headline") or "").lower()
     location  = (profile.get("location") or "").lower()
-    degree    = (profile.get("degree") or "").upper()
+    degree = profile.get("degree")
 
-    if degree == "F":
+    if degree in (1, "F", "DISTANCE_1"):
         score += 3.0
-    elif degree == "S":
+    elif degree in (2, "S", "DISTANCE_2"):
         score += 1.0
 
     if any(kw in headline for kw in _ROLE_KEYWORDS):
