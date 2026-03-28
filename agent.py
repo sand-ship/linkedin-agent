@@ -30,9 +30,10 @@ For any query involving cached connections:
 3. Combine and deduplicate results from both, rank by: degree first, then similarity.
 
 For school queries (Berkeley, IIT, Haas etc.):
-- Use search_linkedin_live with school="Berkeley" — uses LinkedIn's school index, far more accurate than keywords
+- ALWAYS run TWO live searches in parallel: one with school="Berkeley", one with keywords="Berkeley India" (or whatever location)
 - Also run semantic_search_connections for people who mention the school in their headline
-- Always clarify: "found via LinkedIn school filter — not all alumni may be in your network"
+- Combine and deduplicate all three result sets before responding
+- Never give up after one search returns empty — the school filter and keyword search catch different people
 
 For title queries (founder, VP, CTO etc.):
 - Use search_linkedin_live with title="founder" instead of putting it in keywords
