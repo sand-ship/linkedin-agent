@@ -169,6 +169,17 @@ def main():
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN not set in .env")
 
+    # Pre-initialize ChromaDB and the embedding model in the main thread.
+    # ChromaDB's Rust backend fails to initialize when first called from a
+    # thread pool thread (via asyncio.to_thread), producing "bindings" errors.
+    try:
+        logger.info("Initialising semantic index...")
+        embeddings.get_collection()
+        embeddings.get_model()
+        logger.info("Semantic index ready.")
+    except Exception as e:
+        logger.warning(f"Semantic index unavailable at startup: {e}")
+
     app = Application.builder().token(token).build()
 
     app.add_handler(CommandHandler("start", cmd_start))
